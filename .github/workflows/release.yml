@@ -7,10 +7,12 @@ on:
 
 # Trusted Publishing (OIDC) notes:
 # - In PyPI, create the project once (or upload the first release manually).
-# - Then configure a "Trusted Publisher" for this repo/workflow so PyPI accepts
-#   OIDC tokens from GitHub Actions without any stored secrets.
-# - PyPI will ask for: Owner, Repository name, and this workflow filename
-#   (`release.yml`). If you use GitHub Environments, include that too.
+# - Then configure a "Trusted Publisher" for this repo so PyPI accepts OIDC
+#   tokens from GitHub Actions without any stored secrets.
+# - For GitHub Actions, PyPI matches on: Owner, Repository, and Workflow name
+#   (the `name:` field in this file, currently `Release`).
+# - If you configure an Environment name in PyPI, set the same `environment:`
+#   on the publishing job below.
 
 permissions:
   contents: read
@@ -35,4 +37,3 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-

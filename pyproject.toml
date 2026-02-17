@@ -23,8 +23,8 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/richadaf/RFX-core"
-Issues = "https://github.com/richadaf/RFX-core/issues"
+Repository = "https://github.com/Richadaf/audio_rms-detector"
+Issues = "https://github.com/Richadaf/audio_rms-detector/issues"
 
 [project.optional-dependencies]
 dev = [

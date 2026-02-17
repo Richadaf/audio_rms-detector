@@ -1,6 +1,6 @@
 # rms-scan
 
-[![CI](https://github.com/richadaf/RFX-core/actions/workflows/ci.yml/badge.svg)](https://github.com/richadaf/RFX-core/actions/workflows/ci.yml)
+[![CI](https://github.com/Richadaf/audio_rms-detector/actions/workflows/ci.yml/badge.svg)](https://github.com/Richadaf/audio_rms-detector/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/rms-scan.svg)](https://pypi.org/project/rms-scan/)
 
 `rms-scan` is a small offline CLI that analyzes a media file with FFmpeg `astats` and reports:
