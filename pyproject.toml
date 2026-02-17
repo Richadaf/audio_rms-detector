@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rms-scan"
-version = "0.1.0"
+version = "0.1.1"
 description = "Offline RMS scanner for wav, mp3 and other formats using FFmpeg astats"
 readme = "README.md"
 requires-python = ">=3.10"
