@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual Environment
+venv/
+.venv/
+.venv-tools/
+.tox/
+
+# Audio Files
+output/
+*.astats
+*.rms
+*.wav
+*.flac
+*.mp3
+*.ogg
+*.m4a
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
