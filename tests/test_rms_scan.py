@@ -69,5 +69,22 @@ class ParseAstatsOutputTests(unittest.TestCase):
         self.assertAlmostEqual(result.channels["2"]["RMS_peak"].last, -18.8)
 
 
+class ParseEbur128OutputTests(unittest.TestCase):
+    def test_parses_integrated_lufs_from_summary_lines(self) -> None:
+        lines = [
+            "[Parsed_ebur128_0 @ 0x0] Summary:",
+            "  Integrated loudness:",
+            "    I:         -16.7 LUFS",
+            "    Threshold: -26.8 LUFS",
+            "  Loudness range:",
+            "    LRA:         1.2 LU",
+        ]
+
+        result = rms_scan.parse_ebur128_output(lines)
+
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result.integrated_lufs, -16.7)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,10 +3,11 @@
 [![CI](https://github.com/Richadaf/audio_rms-detector/actions/workflows/ci.yml/badge.svg)](https://github.com/Richadaf/audio_rms-detector/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/rms-scan.svg)](https://pypi.org/project/rms-scan/)
 
-`rms-scan` is a small offline CLI that analyzes a media file with FFmpeg `astats` and reports:
+`rms-scan` is a small offline CLI that analyzes a media file with FFmpeg and reports:
 
 - Overall/average RMS: `lavfi.astats.Overall.RMS_level` (dBFS)
 - Highest RMS window: `lavfi.astats.Overall.RMS_peak` (dBFS)
+- Integrated loudness (EBU R128): `I` (LUFS)
 - Pass/fail against a configurable RMS window (default: `[-23, -18]` dBFS)
 
 It also prints per-channel RMS details when available.
@@ -71,6 +72,7 @@ Duration: 3728.41 s
 Audio: 48000 Hz, 2 ch, stereo
 Overall RMS_level: -21.34 dBFS
 Overall RMS_peak: -18.62 dBFS
+Integrated loudness: -16.70 LUFS
 Spec window: [-23.0, -18.0] dBFS
 Result: PASS
 Details:
@@ -89,6 +91,7 @@ Duration: 912.03 s
 Audio: 44100 Hz, 2 ch, stereo
 Overall RMS_level: -24.10 dBFS
 Overall RMS_peak: -20.80 dBFS
+Integrated loudness: -19.90 LUFS
 Spec window: [-23.0, -18.0] dBFS
 Result: FAIL
 Suggested gain change: +3.6 dB
@@ -125,6 +128,9 @@ target - measured_rms_level
   },
   "duration_seconds": 3728.41,
   "file": "program.wav",
+  "loudness": {
+    "integrated_lufs": -16.7
+  },
   "overall": {
     "RMS_level": {
       "last_dbfs": -21.34,
@@ -165,6 +171,7 @@ The tool uses FFprobe first for metadata and then analyzes audio without renderi
 - astats filter with metadata keys:
   - preferred: `astats=metadata=1:reset=0:measure_overall=RMS_level+RMS_peak:measure_perchannel=RMS_level+RMS_peak,ametadata=print`
   - fallback for older builds: `astats=metadata=1:reset=0,ametadata=print`
+- ebur128 filter for integrated loudness (`I`, LUFS)
 
 This processes as fast as decode/filter speed allows (typically faster-than-real-time on modern machines).
 

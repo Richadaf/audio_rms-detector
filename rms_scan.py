@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline RMS scanner based on FFmpeg astats."""
+"""Offline RMS/LUFS scanner based on FFmpeg astats + ebur128."""
 
 from __future__ import annotations
 
@@ -38,6 +38,10 @@ _OVERALL_SUMMARY_RE = re.compile(
 _CHANNEL_HEADER_RE = re.compile(r"Channel\s*:\s*(?P<channel>\d+)", re.IGNORECASE)
 _CHANNEL_SUMMARY_RE = re.compile(
     rf"RMS\s+(?P<kind>level|peak)(?:\s+dB)?\s*:\s*(?P<value>{_DB_VALUE_RE})",
+    re.IGNORECASE,
+)
+_EBUR128_INTEGRATED_RE = re.compile(
+    rf"\bI:\s*(?P<value>{_DB_VALUE_RE})\s*LUFS\b",
     re.IGNORECASE,
 )
 
@@ -105,6 +109,14 @@ class ProbeInfo:
     channel_layout: Optional[str]
 
 
+@dataclass
+class ParsedEbur128:
+    """Parsed loudness data from FFmpeg ebur128 output."""
+
+    integrated_lufs: Optional[float] = None
+    matched_lines: list[str] = field(default_factory=list)
+
+
 def parse_astats_output(lines: Iterable[str]) -> ParsedAstats:
     """Parse astats output, handling keyed metadata and summary-line formats."""
 
@@ -161,6 +173,26 @@ def parse_astats_output(lines: Iterable[str]) -> ParsedAstats:
                 result.matched_lines.append(line)
 
     return result
+
+
+def parse_ebur128_output(lines: Iterable[str]) -> Optional[ParsedEbur128]:
+    """Parse ebur128 output and extract integrated loudness (LUFS)."""
+
+    result = ParsedEbur128()
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = _EBUR128_INTEGRATED_RE.search(line)
+        if not match:
+            continue
+        parsed_value = _parse_db_value(match.group("value"))
+        if parsed_value is None:
+            continue
+        result.integrated_lufs = parsed_value
+        result.matched_lines.append(line)
+
+    return result if result.integrated_lufs is not None else None
 
 
 def _normalize_scope(raw_scope: str) -> tuple[str, Optional[str]]:
@@ -318,6 +350,43 @@ def _run_ffmpeg_astats(ffmpeg_bin: str, input_path: Path) -> list[str]:
     return last_lines
 
 
+def _run_ffmpeg_ebur128(ffmpeg_bin: str, input_path: Path) -> list[str]:
+    cmd = [
+        ffmpeg_bin,
+        "-hide_banner",
+        "-v",
+        "info",
+        "-nostats",
+        "-i",
+        str(input_path),
+        "-vn",
+        "-sn",
+        "-dn",
+        "-map",
+        "0:a:0?",
+        "-af",
+        "ebur128",
+        "-f",
+        "null",
+        "-",
+    ]
+
+    try:
+        completed = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise MissingBinaryError(f"`{ffmpeg_bin}` is not executable.") from exc
+
+    return _collect_output_lines(completed.stdout, completed.stderr)
+
+
 def _looks_like_measure_option_error(output: str) -> bool:
     lowered = output.lower()
     hints = (
@@ -389,6 +458,7 @@ def _build_json_payload(
     input_path: Path,
     probe: ProbeInfo,
     parsed: ParsedAstats,
+    loudness: Optional[ParsedEbur128],
     min_dbfs: float,
     max_dbfs: float,
     passed: bool,
@@ -419,6 +489,9 @@ def _build_json_payload(
                 "selected_dbfs": _json_db(parsed.selected_overall("RMS_peak")),
             },
         },
+        "loudness": {
+            "integrated_lufs": _json_db(loudness.integrated_lufs) if loudness is not None else None,
+        },
         "range": {"min_dbfs": min_dbfs, "max_dbfs": max_dbfs},
         "target_midpoint_dbfs": TARGET_MIDPOINT_DBFS,
         "pass": passed,
@@ -431,6 +504,7 @@ def _print_human_output(
     input_path: Path,
     probe: ProbeInfo,
     parsed: ParsedAstats,
+    loudness: Optional[ParsedEbur128],
     min_dbfs: float,
     max_dbfs: float,
     passed: bool,
@@ -456,6 +530,8 @@ def _print_human_output(
 
     print(f"Overall RMS_level: {_format_db(overall_level)} dBFS")
     print(f"Overall RMS_peak: {_format_db(overall_peak)} dBFS")
+    integrated_lufs = loudness.integrated_lufs if loudness is not None else None
+    print(f"Integrated loudness: {_format_db(integrated_lufs)} LUFS")
     print(f"Spec window: [{min_dbfs:.1f}, {max_dbfs:.1f}] dBFS")
     print(f"Result: {'PASS' if passed else 'FAIL'}")
 
@@ -491,17 +567,31 @@ def _print_verbose_lines(parsed: ParsedAstats, all_lines: list[str], to_stderr: 
         print(f"  {line}", file=stream)
 
 
+def _print_verbose_ebur128_lines(parsed: Optional[ParsedEbur128], all_lines: list[str], to_stderr: bool) -> None:
+    stream = sys.stderr if to_stderr else sys.stdout
+    selected_lines = parsed.matched_lines if parsed is not None else []
+    if not selected_lines:
+        selected_lines = [line for line in all_lines if "ebur128" in line.lower() or " lufs" in line.lower()]
+
+    print("Raw ebur128 lines parsed:", file=stream)
+    if not selected_lines:
+        print("  (none found)", file=stream)
+        return
+    for line in selected_lines:
+        print(f"  {line}", file=stream)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="rms-scan",
-        description="Analyze media with FFmpeg astats and report RMS stats.",
+        description="Analyze media with FFmpeg and report RMS + integrated LUFS stats.",
     )
     parser.add_argument("input_path", help="Path to audio or video file")
     parser.add_argument("--min", dest="min_dbfs", type=float, default=-23.0, help="Minimum RMS dBFS (default: -23)")
     parser.add_argument("--max", dest="max_dbfs", type=float, default=-18.0, help="Maximum RMS dBFS (default: -18)")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
-    parser.add_argument("--verbose", action="store_true", help="Print raw astats lines that were parsed")
+    parser.add_argument("--verbose", action="store_true", help="Print raw astats/ebur128 lines that were parsed")
     parser.add_argument("--ffmpeg", default=None, help="Path to ffmpeg binary")
     parser.add_argument("--ffprobe", default=None, help="Path to ffprobe binary")
     return parser
@@ -541,13 +631,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except MissingBinaryError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return EXIT_MISSING_BIN
+    try:
+        raw_loudness_lines = _run_ffmpeg_ebur128(ffmpeg_bin, input_path)
+    except MissingBinaryError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return EXIT_MISSING_BIN
 
     parsed = parse_astats_output(raw_lines)
+    parsed_loudness = parse_ebur128_output(raw_loudness_lines)
     overall_level = parsed.selected_overall("RMS_level")
     overall_peak = parsed.selected_overall("RMS_peak")
 
     if args.verbose:
         _print_verbose_lines(parsed, raw_lines, to_stderr=args.json)
+        _print_verbose_ebur128_lines(parsed_loudness, raw_loudness_lines, to_stderr=args.json)
 
     if overall_level is None or overall_peak is None:
         print(
@@ -569,6 +666,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             input_path=input_path,
             probe=probe,
             parsed=parsed,
+            loudness=parsed_loudness,
             min_dbfs=args.min_dbfs,
             max_dbfs=args.max_dbfs,
             passed=passed,
@@ -580,6 +678,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             input_path=input_path,
             probe=probe,
             parsed=parsed,
+            loudness=parsed_loudness,
             min_dbfs=args.min_dbfs,
             max_dbfs=args.max_dbfs,
             passed=passed,
